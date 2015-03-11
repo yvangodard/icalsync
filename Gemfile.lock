@@ -12,6 +12,7 @@ GEM
     method_source (0.8.2)
     multi_json (1.10.1)
     multipart-post (2.0.0)
+    power_assert (0.2.2)
     pry (0.10.1)
       coderay (~> 1.1.0)
       method_source (~> 0.8.1)
@@ -23,6 +24,8 @@ GEM
       jwt (~> 1.0)
       multi_json (~> 1.10)
     slop (3.6.0)
+    test-unit (3.0.8)
+      power_assert
 
 PLATFORMS
   ruby
@@ -32,3 +35,4 @@ DEPENDENCIES
   json (~> 1.8)
   pry
   signet (~> 0.6)
+  test-unit

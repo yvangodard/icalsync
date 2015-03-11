@@ -10,3 +10,8 @@ gem 'icalendar', '2.2.2'
 gem 'pry'
 gem 'signet', '~> 0.6'
 gem 'json', '~> 1.8'
+
+
+group :test do
+  gem 'test-unit'
+end

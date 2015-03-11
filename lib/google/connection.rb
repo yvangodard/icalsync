@@ -107,10 +107,14 @@ module Google
     #
     # Send a request to google.
     #
-    def send(path, method, content = '')
+    def send(path, method, content = '', wait=nil)
 
+      if wait
+        rnd = rand
+        puts "Waiting for #{(wait + rnd).round(3)} sec and resend"
+        sleep(wait + rnd)
+      end
       uri = BASE_URI + path
-
       response = @client.fetch_protected_resource(
         :uri => uri,
         :method => method,
@@ -118,7 +122,18 @@ module Google
         :headers => {'Content-type' => 'application/json'}
       )
 
-      check_for_errors(response)
+      case response.status
+        when 400
+          raise HTTPRequestFailed, response.body
+        when 403
+          wait = wait ? wait * 2 : 1
+          raise(HTTPRequestFailed, response.body) if wait > 1025
+          return send(path, method, content, wait)
+        when 404 then raise HTTPNotFound, response.body
+        when 405..499 then raise HTTPRequestFailed, response.body
+      end
+
+      #check_for_errors(response)
       return response
     end
 
@@ -135,6 +150,20 @@ module Google
       end
     end
 
+    #Google::HTTPQuotaExceeded: {
+   #"error": {
+    #"errors": [
+     #{
+      #"domain": "usageLimits",
+      #"reason": "userRateLimitExceeded",
+      #"message": "User Rate Limit Exceeded"
+     #}
+    #],
+    #"code": 403,
+    #"message": "User Rate Limit Exceeded"
+   #}
+  #}
+
     #
     # Check for common HTTP Errors and raise the appropriate response.
     #
@@ -144,7 +173,6 @@ module Google
         when 403 then raise HTTPQuotaExceeded, response.body
         when 404 then raise HTTPNotFound, response.body
         when 405..499 then raise HTTPRequestFailed, response.body
-
       end
     end
 

@@ -23,6 +23,8 @@ OptionParser.new do |opts|
 end.parse!
 
 sync = Act::Sync.new(options.calendar_id, options.ics_file, options.debug)
-(sync.purge; exit) if options.purge
+if options.purge
+  sync.purge
+  exit
+end
 sync.sync
-

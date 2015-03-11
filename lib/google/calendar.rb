@@ -35,7 +35,15 @@ module Google
       )
 
       @id = params[:calendar]
-      # raise CalendarIDMissing unless @id
+    end
+
+    def exist?
+      begin
+        response = @connection.send("/calendars/#{CGI::escape @id}", :get)
+      rescue HTTPNotFound
+        return false
+      end
+      true
     end
 
     #
@@ -91,8 +99,8 @@ module Google
       event_lookup()
     end
 
-    def events_all
-      event_lookup_all()
+    def events_all(show_deleted=true)
+      event_lookup_all(show_deleted)
     end
 
     #
@@ -253,18 +261,19 @@ module Google
         events = Event.build_from_google_feed( JSON.parse(response.body) , self) || []
         return events if events.empty?
         events.length > 1 ? events : [events[0]]
-      rescue Google::HTTPNotFound
+      rescue Google::HTTPNotFound => msg
+        puts msg
         return nil
       end
     end
 
-    def event_lookup_all() #:nodoc:
+    def event_lookup_all(show_deleted) #:nodoc:
       begin
         events = []
         page_token = nil
         sync_token = nil
         loop do
-          query_string = "?maxResults=2500&showDeleted=true"
+          query_string = "?maxResults=2500&showDeleted=#{show_deleted.to_s}"
           if page_token
             query_string << "&pageToken=#{page_token}"
           end
@@ -304,6 +313,7 @@ module Google
       event.save
       event
     end
+
 
     #
     # Wraps the `send` method. Send an event related request to Google.

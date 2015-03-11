@@ -12,7 +12,7 @@ module Act
 
   class Sync
 
-    def initialize(calendar_id, ical_file, debug=false)
+    def initialize(calendar_id, ical_file=nil, debug=false)
       @client_id = Config::CLIENT_ID
       @secret = Config::SECRET
       @token_file = File.expand_path Config::TOKEN_FILE # remove this file to re-generate token
@@ -24,8 +24,12 @@ module Act
       #
       raise "missing option calendar_id" if @calendar_id.nil?
 
-      @ical = get_i_cal
       check_token
+      check_calendar_id
+    end
+
+    def check_calendar_id
+      raise "#{@calendar_id} does not exist" unless g_cal.exist?
     end
 
     #
@@ -38,6 +42,10 @@ module Act
         :calendar      => @calendar_id,
         :redirect_url  => "urn:ietf:wg:oauth:2.0:oob" # this is what Google uses for 'applications'
       )
+    end
+
+    def g_cal_active_events
+      g_cal.events_all.select{|e| e.status != 'cancelled'}
     end
 
     def flatten(a)
@@ -66,6 +74,7 @@ module Act
     # Return a ICS Calendar Instance
     #
     def get_i_cal
+      raise "missing ICS file" if @ical_file.nil?
       begin
         file_content = open(@ical_file) { |f| f.read }
         icals = Icalendar.parse(file_content)
@@ -112,7 +121,7 @@ module Act
     #
     def check_token
       if File.exist?(@token_file)
-        refresh_token = open(@token_file) { |f| f.read }
+        refresh_token = open(@token_file) { |f| f.read }.chomp
         g_cal.login_with_refresh_token(refresh_token)
       else
         # A user needs to approve access in order to work with their calendars.
@@ -135,8 +144,7 @@ module Act
     def purge
       i = 0
       debug "Purge events on GCal... "
-      events = g_cal.events_all
-      events.each do |e|
+      g_cal.events_all.each do |e|
         next if e.status == 'cancelled'
         debug "Delete: #{e}"
         e.delete
@@ -146,9 +154,6 @@ module Act
       i
     end
 
-    #
-    # Return an attendees array compatible with G API
-    #
     def parse_attendees(att)
       return nil if att.nil? || att.empty?
       response_status_values = {
@@ -234,12 +239,14 @@ module Act
     #
     def sync
 
-      idem = created = updated = restored = removed = 0
+      idem = created = updated = restored = removed = cancelled_ics = 0
       # load Google events from API, including deleted.
       g_events = g_cal.events_all
 
+      @ical = get_i_cal
       @ical.events.each do |i_evt|
         mock = g_evt_from_i_evt(i_evt, Google::Event.new) # mock object for comparison
+        cancelled_ics += 1 if mock.status == 'cancelled'
         # Pick a Google event by ID from google events
         # and remove it from the list
         g_evt = g_events.find { |e| e.id == mock.id }
@@ -269,11 +276,7 @@ module Act
           end
         rescue Google::HTTPRequestFailed => msg
           p msg
-        rescue Google::HTTPQuotaExceeded => msg
-          p msg
-          #puts "Try saving without attendees: #{g_evt}"
-          #g_evt.attendees = nil
-          #g_evt.save
+          raise msg
         end
       end
 
@@ -286,14 +289,16 @@ module Act
         end
       end
 
-      puts "ICAL size: #{@ical.events.size}"
-      puts "Idem size: #{idem}"
-      puts "Created size: #{created}"
-      puts "Updated size: #{updated}"
-      puts "Restored size: #{restored}"
-      puts "Removed size: #{removed}"
-      puts "Idem + Created + Updated + Restored: #{idem + created + updated + restored}"
-      {idem: idem, created: created, updated: updated, restored:restored, removed: removed, sum: idem + created + updated + restored}
+      debug "ICAL size: #{@ical.events.size}"
+      debug "Idem size: #{idem}"
+      debug "Created size: #{created}"
+      debug "Updated size: #{updated}"
+      debug "Restored size: #{restored}"
+      debug "Removed size: #{removed}"
+      debug "Cancelled size: #{cancelled_ics}"
+      debug "Idem + Created + Updated + Restored: #{idem + created + updated + restored}"
+      {idem: idem, created: created, updated: updated, restored:restored, removed: removed,
+       cancelled_ics: cancelled_ics, sum: idem + created + updated + restored}
     end
   end
 end

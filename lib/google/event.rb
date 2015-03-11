@@ -62,7 +62,6 @@ module Google
 
       self.visibility   = params[:visibility]
       self.transparency = params[:transparency]
-      self.all_day      = params[:all_day] if params[:all_day]
     end
 
     #
@@ -84,7 +83,9 @@ module Google
     # Sets the start time of the Event.  Must be a Time object or a parse-able string representation of a time.
     #
     def start_time=(time)
-      @start_time = Event.parse_time(time)
+      #@start_time = Event.parse_time(time)
+      raise "start_time must be Time" unless time.is_a?(Time)
+      @start_time = time.dup.utc
     end
 
     #
@@ -94,7 +95,8 @@ module Google
     #
     def start_time
       #@start_time ||= Time.now.utc
-      (@start_time.is_a? String) ? @start_time : @start_time.xmlschema
+      #(@start_time.is_a? String) ? @start_time : @start_time.xmlschema
+      @start_time
     end
 
     #
@@ -104,7 +106,7 @@ module Google
     #
     def end_time
       @end_time ||= Time.now.utc + (60 * 60) # seconds * min
-      (@end_time.is_a? String) ? @end_time : @end_time.xmlschema
+      #(@end_time.is_a? String) ? @end_time : @end_time.xmlschema
     end
 
     #
@@ -116,34 +118,40 @@ module Google
       #@end_time = (time.is_a? String) ? Time.parse(time) : time.dup.utc
     #end
     def end_time=(time)
-      @end_time = Event.parse_time(time)
+      raise "end_time must be Time" unless time.is_a?(Time)
+      @end_time = time.dup.utc
     end
 
     #
     # Returns whether the Event is an all-day event, based on whether the event starts at the beginning and ends at the end of the day.
     #
     def all_day?
-      time = (@start_time.is_a?  String) ? Time.parse(@start_time) : @start_time.dup.utc
-      duration % (24 * 60 * 60) == 0 && time == Time.local(time.year,time.month,time.day)
+      time = start_time.dup
+      time.localtime
+      # 3600 for dst
+      (duration % (24 * 60 * 60)).between?(-3600, 3600) && time == Time.local(time.year,time.month,time.day)
     end
 
     #
     # Makes an event all day, by setting it's start time to the passed in time and it's end time 24 hours later.
     # Note: this will clobber both the start and end times currently set.
     #
-    def all_day=(time)
-      if time.class == String
-        time = Time.parse(time)
-      end
-      @start_time = time.strftime("%Y-%m-%d")
-      @end_time = (time + 24*60*60).strftime("%Y-%m-%d")
-    end
+    #def all_day(time, end_time=nil)
+      #if time.class == String
+        #time = Time.parse(time)
+      #end
+      #if end_time.class == String
+        #end_time = Time.parse(end_time)
+      #end
+      #@start_time = time.strftime("%Y-%m-%d")
+      #@end_time = end_time ? end_time.strftime("%Y-%m-%d"): (time + 24*60*60).strftime("%Y-%m-%d")
+    #end
 
     #
     # Duration of the event in seconds
     #
     def duration
-      Time.parse(end_time) - Time.parse(start_time)
+      end_time - start_time
     end
 
     #
@@ -240,31 +248,64 @@ module Google
       events.collect {|e| new_from_feed(e, calendar)}.flatten
     end
 
+    ##
+    ## Google JSON representation of an event object.
+    ##
+    #def to_json
+      #json = "{\n"
+      #json += "\"id\": #{id.to_json},\n" if id
+      #json += "\"status\": #{status.to_json},\n" if status
+      #json += "\"summary\": #{title.to_json},\n" if title
+      #json += "\"visibility\": #{visibility.to_json},\n" if visibility
+      #json += "\"description\": #{description.to_json},\n" if description
+      #json += "\"location\": #{location.to_json},\n" if location
+      #json += "\"start\": {\n"
+      #json += "\t\"dateTime\": \"#{start_time}\"\n"
+      #json += " #{timezone_needed? ? local_timezone_json : ''}"
+      #json += "}\n,"
+      #json += "\"end\": {\n"
+      #json += "\t\"dateTime\": \"#{end_time}\"\n"
+      #json += "#{timezone_needed? ? local_timezone_json : ''}"
+      #json += "},\n"
+      #json += "#{recurrence_json}"
+      #json += "#{attendees_json}"
+      #json += "\"reminders\": {\n"
+        #json += "#{reminders_json}"
+      #json += " }\n"
+    #json += "}\n"
+    #end
     #
     # Google JSON representation of an event object.
     #
     def to_json
-      "{
-        \"id\": #{id.to_json},
-        \"status\": #{status.to_json},
-        \"summary\": #{title.to_json},
-        \"visibility\": #{visibility.to_json},
-        \"description\": #{description.to_json},
-        \"location\": #{location.to_json},
-        \"start\": {
-          \"dateTime\": \"#{start_time}\"
-          #{timezone_needed? ? local_timezone_json : ''}
-        },
-        \"end\": {
-          \"dateTime\": \"#{end_time}\"
-          #{timezone_needed? ? local_timezone_json : ''}
-        },
-        #{recurrence_json}
-        #{attendees_json}
-        \"reminders\": {
-          #{reminders_json}
-        }
-      }"
+      json = "{\n"
+      json += "\"id\": #{id.to_json},\n" if id
+      json += "\"status\": #{status.to_json},\n" if status
+      json += "\"summary\": #{title.to_json},\n" if title
+      json += "\"visibility\": #{visibility.to_json},\n" if visibility
+      json += "\"description\": #{description.to_json},\n" if description
+      json += "\"location\": #{location.to_json},\n" if location
+      json += "#{dates_json}"
+      json += "#{recurrence_json}"
+      json += "#{attendees_json}"
+      json += "\"reminders\": {\n"
+      json += "#{reminders_json}"
+      json += " }\n"
+      json += "}\n"
+    end
+
+    def dates_json
+      date_type = all_day? ? 'date' : 'dateTime'
+      _start = all_day? ? start_time.getlocal.strftime('%Y-%m-%d') : start_time.xmlschema
+      _end = all_day? ? end_time.getlocal.strftime('%Y-%m-%d') : end_time.xmlschema
+      json = "\"start\": {\n"
+      json += "\t\"#{date_type}\": \"#{_start}\"\n"
+      json += " #{timezone_needed? ? local_timezone_json : ''}"
+      json += "}\n,"
+      json += "\"end\": {\n"
+      json += "\t\"#{date_type}\": \"#{_end}\"\n"
+      json += "#{timezone_needed? ? local_timezone_json : ''}"
+      json += "},\n"
     end
 
     #
@@ -438,6 +479,7 @@ module Google
     end
 
     def self.parse_json_time(time_hash)
+      return unless time_hash
       if time_hash['date']
         Time.parse(time_hash['date']).utc
       elsif time_hash['dateTime']
@@ -452,7 +494,6 @@ module Google
     #
     def self.parse_time(time) #:nodoc
       raise ArgumentError, "Start Time must be either Time or String" unless (time.is_a?(String) || time.is_a?(Time))
-      #(time.is_a? String) ? Time.parse(time) : time.dup.utc
       (time.is_a? String) ? Time.parse(time) : time.dup.utc
     end
 
